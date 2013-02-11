@@ -10,6 +10,7 @@ $(function() {
     "use strict";
 
     var bodyData = $('body').data();
+    var isLoggedIn = !!bodyData.buyerEmail;
 
     $('[name="pin"]').each(function() {
         this.type = 'number';
@@ -17,6 +18,7 @@ $(function() {
     });
 
     var onLogout = function() {
+        console.log('default onLogout called')
         // This is the default onLogout but might be replaced by other handlers.
         $('.message').hide();
         $('#begin').fadeOut();
@@ -25,13 +27,16 @@ $(function() {
 
     if (bodyData.flow === 'lobby') {
         var verifyUrl = bodyData.verifyUrl;
+        console.log('logged in user: ' + (bodyData.buyerEmail || null))
 
         navigator.id.watch({
+          loggedInUser: (bodyData.buyerEmail || null),
           onlogin: function(assertion) {
             // A user has logged in! Here you need to:
             // 1. Send the assertion to your backend for verification and to create a session.
             // 2. Update your UI.
             console.log('onlogin');
+            isLoggedIn = true;
             $('.message').hide();
             $('#login-wait').fadeIn();
             $.post(verifyUrl, {assertion: assertion})
@@ -45,12 +50,14 @@ $(function() {
                     $('#pin [name="pin"]')[0].focus();
                 }
             })
-            .error(function() {
-                console.log('login error');
-            });
+            // .error(function(err) {
+            //     console.log('login error');
+            //     console.log(err)
+            // });
           },
           onlogout: function() {
               console.log('logged out');
+              isLoggedIn = false;
               onLogout();
           }
         });
@@ -92,10 +99,12 @@ $(function() {
     }
 
     $('#forgot-pin').click(function(evt) {
+        console.log('#forgot-pin clicked')
         var anchor = $(this);
         evt.preventDefault();
         // Define a new logout handler.
         onLogout = function() {
+            console.log('forgot-pin onLogout called')
             // Wait until Persona has logged us out, then redirect to the
             // original destination.
             window.location.href = anchor.attr('href');
@@ -104,6 +113,12 @@ $(function() {
             // otherwise it is held in memory and called on the next page.
             onLogout = function() {};
         };
-        navigator.id.logout();
+        if (isLoggedIn) {
+            console.log('#forgot-pin called while logged in')
+            navigator.id.logout();
+        } else {
+            console.log('#forgot-pin called while logged out')
+            onLogout();
+        }
     });
 });

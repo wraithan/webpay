@@ -33,6 +33,7 @@ def get_user(request):
 
 
 def set_user(request, email):
+    request.session['email'] = email
     uuid = get_uuid(email)
     request.session['uuid'] = uuid
     buyer = client.get_buyer(uuid)
