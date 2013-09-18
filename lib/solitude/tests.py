@@ -1,15 +1,14 @@
 import json
 
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.test import TestCase
 
 import mock
-from nose.exc import SkipTest
 from nose.tools import eq_
 
 from lib.solitude.api import client, SellerNotConfigured
 from lib.solitude.errors import ERROR_STRINGS
+from lib.solitude.mock_api import MockSlumber
 
 
 class SolitudeAPITest(TestCase):
@@ -17,164 +16,45 @@ class SolitudeAPITest(TestCase):
     def setUp(self):
         self.uuid = 'dat:uuid'
         self.pin = '1234'
-
-    @classmethod
-    def setUpClass(cls):
-        # TODO(Wraithan): Add a mocked backend so we have idempotent tests.
-        invalid_urls = (None, 'http://example.com')
-        if (getattr(settings, 'SOLITUDE_URL', None) in invalid_urls):
-            raise SkipTest
-        client.create_buyer('dat:uuid', '1234')
+        client.slumber = MockSlumber()
+        client.create_buyer(self.uuid, self.pin)
 
     def test_get_buyer(self):
         buyer = client.get_buyer(self.uuid)
         eq_(buyer.get('uuid'), self.uuid)
         assert buyer.get('pin')
-        assert buyer.get('id')
+        assert buyer.get('id') is not None
 
     def test_non_existent_get_buyer(self):
         buyer = client.get_buyer('something that does not exist')
         assert not buyer
 
-    def test_create_buyer_without_pin(self):
-        uuid = 'no_pin:1234'
-        buyer = client.create_buyer(uuid)
-        eq_(buyer.get('uuid'), uuid)
-        assert not buyer.get('pin')
-        assert buyer.get('id')
-
-    def test_create_buyer_with_pin(self):
-        uuid = 'with_pin'
-        buyer = client.create_buyer(uuid, self.pin)
-        eq_(buyer.get('uuid'), uuid)
-        assert buyer.get('pin')
-        assert buyer.get('id')
-
-    def test_create_buyer_with_alpha_pin(self):
-        buyer = client.create_buyer('with_alpha_pin', 'lame')
+    def test_create_buyer_bubbles_errors_up(self):
+        client.slumber.generic.buyer.post.side_effect = None
+        client.slumber.generic.buyer.post.return_value = {'errors': 'failure'}
+        buyer = client.create_buyer(self.uuid, self.pin)
         assert buyer.get('errors')
-        eq_(buyer['errors'].get('pin'),
-            [ERROR_STRINGS['PIN may only consists of numbers']])
-
-    def test_create_buyer_with_short_pin(self):
-        buyer = client.create_buyer('with_short_pin', '123')
-        assert buyer.get('errors')
-        eq_(buyer['errors'].get('pin'),
-            [ERROR_STRINGS['PIN must be exactly 4 numbers long']])
-
-    def test_create_buyer_with_long_pin(self):
-        buyer = client.create_buyer('with_long_pin', '12345')
-        assert buyer.get('errors')
-        eq_(buyer['errors'].get('pin'),
-            [ERROR_STRINGS['PIN must be exactly 4 numbers long']])
-
-    def test_create_buyer_with_existing_uuid(self):
-        buyer = client.create_buyer(self.uuid, '1234')
-        assert buyer.get('errors')
-        eq_(buyer['errors'].get('uuid'),
-            [ERROR_STRINGS['Buyer with this Uuid already exists.']])
+        eq_(buyer['errors'], 'failure')
 
     def test_confirm_pin_with_good_pin(self):
-        uuid = 'confirm_pin_good_pin'
-        client.create_buyer(uuid, self.pin)
-        assert client.confirm_pin(uuid, self.pin)
+        client.slumber.generic.confirm_pin.post.return_value = {
+            'confirmed': True
+        }
+        assert client.confirm_pin(self.uuid, self.pin)
 
     def test_confirm_pin_with_bad_pin(self):
-        uuid = 'confirm_pin_bad_pin'
-        client.create_buyer(uuid, self.pin)
-        assert not client.confirm_pin(uuid, self.pin[::-1])
+        client.slumber.generic.confirm_pin.post.return_value = {
+            'confirmed': False
+        }
+        assert not client.confirm_pin(self.uuid, self.pin[::-1])
 
-    def test_verify_with_confirm_and_good_pin(self):
-        uuid = 'verify_pin_confirm_pin_good_pin'
-        client.create_buyer(uuid, self.pin)
-        assert client.confirm_pin(uuid, self.pin)
-        assert client.verify_pin(uuid, self.pin)['valid']
+    def test_verify_pin_with_good_pin(self):
+        client.slumber.generic.verify_pin.post.return_value = {'valid': True}
+        assert client.verify_pin(self.uuid, self.pin)['valid']
 
-    def test_verify_without_confirm_and_good_pin(self):
-        uuid = 'verify_pin_good_pin'
-        client.create_buyer(uuid, self.pin)
-        assert not client.verify_pin(uuid, self.pin)['valid']
-
-    def test_verify_alpha_pin(self):
-        assert 'pin' in client.verify_pin(self.uuid, 'lame')['errors']
-
-    def test_reset_pin_flag_set(self):
-        # set
-        client.set_new_pin(self.uuid, '1234')
-        res = client.set_needs_pin_reset(self.uuid)
-        eq_(res, {})
-        buyer = client.get_buyer(self.uuid)
-        assert buyer['needs_pin_reset']
-        assert not buyer['new_pin']
-
-        # unset
-        client.set_new_pin(self.uuid, '1234')
-        res = client.set_needs_pin_reset(self.uuid, False)
-        eq_(res, {})
-        buyer = client.get_buyer(self.uuid)
-        assert not buyer['needs_pin_reset']
-        assert not buyer['new_pin']
-
-    def test_set_new_pin_for_reset(self):
-        uuid = 'set_new_pin_for_reset'
-        client.create_buyer(uuid, self.pin)
-        eq_(client.set_new_pin(uuid, '1122'), {})
-
-    def test_set_new_pin_for_reset_with_alpha_pin(self):
-        uuid = 'set_new_pin_for_reset_with_alpha_pin'
-        client.create_buyer(uuid, self.pin)
-        res = client.set_new_pin(uuid, 'meow')
-        assert res.get('errors')
-        eq_(res['errors'].get('new_pin'),
-            [ERROR_STRINGS['PIN may only consists of numbers']])
-
-    def test_reset_confirm_pin_with_good_pin(self):
-        uuid = 'reset_confirm_pin_good_pin'
-        new_pin = '1122'
-        client.create_buyer(uuid, self.pin)
-        client.set_new_pin(uuid, new_pin)
-        assert client.reset_confirm_pin(uuid, new_pin)
-        assert client.verify_pin(uuid, new_pin)
-
-    def test_reset_confirm_pin_with_bad_pin(self):
-        uuid = 'reset_confirm_pin_bad_pin'
-        new_pin = '1122'
-        client.create_buyer(uuid, self.pin)
-        client.set_new_pin(uuid, new_pin)
-        assert client.reset_confirm_pin(uuid, new_pin)
-        assert client.verify_pin(uuid, new_pin)
-        assert not client.reset_confirm_pin(uuid, self.pin)
-        assert client.verify_pin(uuid, new_pin)
-
-    def test_change_pin_without_existing_pin(self):
-        uuid = 'change_pin_without_existing_pin'
-        new_pin = '1234'
-        buyer = client.create_buyer(uuid)
-        assert not buyer.get('pin')
-        client.change_pin(uuid, new_pin)
-        buyer = client.get_buyer(uuid)
-        assert buyer.get('pin')
-        assert client.verify_pin(uuid, new_pin)
-
-    def test_change_pin_with_existing_pin(self):
-        uuid = 'change_pin_with_existing_pin'
-        pin = '5432'
-        new_pin = pin[::-1]
-        client.create_buyer(uuid, pin)
-        client.change_pin(uuid, new_pin)
-        buyer = client.get_buyer(uuid)
-        assert buyer.get('pin')
-        assert client.verify_pin(uuid, new_pin)
-
-    def test_change_pin_to_remove_exising_pin(self):
-        uuid = 'change_pin_to_remove_exising_pin'
-        pin = '5467'
-        new_pin = None
-        buyer = client.create_buyer(uuid, pin)
-        assert buyer.get('pin')
-        client.change_pin(uuid, new_pin)
-        buyer = client.get_buyer(uuid)
-        assert not buyer.get('pin')
+    def test_verify_pin_with_bad_pin(self):
+        client.slumber.generic.verify_pin.post.return_value = {'valid': False}
+        assert not client.verify_pin(self.uuid, self.pin)['valid']
 
 
 class CreateBangoTest(TestCase):

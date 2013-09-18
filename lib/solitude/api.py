@@ -33,7 +33,7 @@ class SolitudeAPI(SlumberWrapper):
         elif res.get('objects'):
             buyer = res['objects'][0]
             buyer['id'] = res['objects'][0].get('resource_pk')
-        elif res.get('resource_pk'):
+        elif res.get('resource_pk') is not None:
             buyer = res
             buyer['id'] = res.get('resource_pk')
         return buyer
