@@ -81,9 +81,16 @@ define('cli', ['settings', 'lib/tracking'], function(settings, tracking) {
             // the full-screen error is displayed.
             $body.addClass('full-error');
 
+
             $fullErrorScreen.find('.heading').text(options.errorHeading);
             $fullErrorScreen.find('.detail').text(options.errorDetail);
             $fullErrorScreen.find('.button').text(options.errorButton);
+            if (options.secondaryButton) {
+                var $btn = $fullErrorScreen.find('.button');
+                $btn.addClass('half');
+                $secondaryBtn = $btn.clone();
+                
+            }
             $fullErrorScreen.show();
 
             // Setup click handler for one time use.

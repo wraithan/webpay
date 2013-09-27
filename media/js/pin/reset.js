@@ -8,16 +8,20 @@ require(['cli', 'id', 'pay/bango'], function(cli, id, bango) {
             onlogin: function _resetLogin(assertion) {
                 console.log('[reset] nav.id onlogin');
                 $.post(bodyData.verifyUrl, {assertion: assertion})
-                    .success(function _resetLoginSuccess(data, textStatus, jqXHR) {
-                        console.log('[reset] login success');
-                        bango.prepareAll(data.user_hash).done(function _forceAuthReady() {
-                            cli.trackWebpayEvent({'action': 'reset force auth',
-                                                  'label': 'Login Success'});
-                            _onSuccess.apply(this);
-                        });
+                    .done(function _resetLoginSuccess(data) {
+                        console.log('[reset] login success, reverified: %s', data.was_reverified);
+                        if (data.was_reverified) {
+                            bango.prepareAll(data.user_hash).done(function _forceAuthReady() {
+                                cli.trackWebpayEvent({'action': 'reset force auth',
+                                                      'label': 'Login Success'});
+                                _onSuccess.apply(this);
+                            });
+                        } else {
+                            cli.showFullScreenError();
+                        }
                     })
-                    .error(function _resetLoginError() {
-                        console.log('[reset] login error');
+                    .fail(function _resetLoginError(data) {
+                        console.log('[reset] login error: %s', JSON.stringify(data));
                         cli.trackWebpayEvent({'action': 'reset force auth',
                                               'label': 'Login Failure'});
                     });

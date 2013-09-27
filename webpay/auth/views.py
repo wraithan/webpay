@@ -65,12 +65,13 @@ def reverify(request):
             logged_user = request.session.get('uuid')
             reverified_user = get_uuid(email)
             if logged_user and logged_user != reverified_user:
-                # TODO: Should we try to support this?
-                raise ValueError('User %r tried to reverify as '
-                                 'new email: %s' % (logged_user, email))
+                return {
+                    'user_hash': logged_user,
+                    'was_reverified': False
+                }
             request.session['was_reverified'] = True
 
-            return {'user_hash': reverified_user}
+            return {'user_hash': reverified_user, 'was_reverified': True}
 
         log.error('Persona assertion failed.')
 
